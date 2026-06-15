@@ -1,0 +1,232 @@
+﻿syntax = "proto3";
+
+package socket_eraser;
+
+// 消息来源类型
+enum MessageSource {
+    SOURCE_UNKNOWN     = 0;
+    SOURCE_CLIENT      = 1;  // 来自擦除客户端
+    SOURCE_DASHBOARD   = 2;  // 来自Dashboard
+}
+// 消息类型枚举
+enum MessageType {
+    MESSAGE_TYPE_UNKNOWN           = 0;      // 未知
+    MESSAGE_TYPE_CLIENT_REGISTER   = 1;      // 客户端注册
+    MESSAGE_TYPE_DISK_INFO         = 2;      // 磁盘信息
+    MESSAGE_TYPE_ERASURE_START     = 3;      // 开始擦除
+    MESSAGE_TYPE_ERASURE_PROGRESS  = 4;      // 擦除进度
+    MESSAGE_TYPE_ERASURE_COMPLETE  = 5;      // 擦除完成
+    MESSAGE_TYPE_HEARTBEAT         = 6;      // 心跳
+    MESSAGE_TYPE_CLIENT_DISCONNECT = 7;      // 客户端断开连接
+    
+    // Dashboard与ServerCore之间的查询消息类型
+    MESSAGE_TYPE_QUERY_CLIENTS     = 100;
+    MESSAGE_TYPE_QUERY_CLIENT_DETAIL = 101;
+    MESSAGE_TYPE_QUERY_DISK_INFO   = 102;
+    MESSAGE_TYPE_QUERY_TASKS       = 103;
+    MESSAGE_TYPE_QUERY_TASK_DETAIL = 104;
+    MESSAGE_TYPE_QUERY_STATISTICS  = 105;
+    
+    // Dashboard与ServerCore之间的响应消息类型
+    MESSAGE_TYPE_RESPONSE_CLIENTS  = 200;
+    MESSAGE_TYPE_RESPONSE_CLIENT_DETAIL = 201;
+    MESSAGE_TYPE_RESPONSE_DISK_INFO = 202;
+    MESSAGE_TYPE_RESPONSE_TASKS    = 203;
+    MESSAGE_TYPE_RESPONSE_TASK_DETAIL = 204;
+    MESSAGE_TYPE_RESPONSE_STATISTICS = 205;
+    
+    // 订阅通知（ServerCore主动推送给Dashboard）
+    MESSAGE_TYPE_NOTIFY_CLIENT_CONNECTED = 300;
+    MESSAGE_TYPE_NOTIFY_CLIENT_DISCONNECTED = 301;
+    MESSAGE_TYPE_NOTIFY_DISK_UPDATED = 302;
+    MESSAGE_TYPE_NOTIFY_TASK_CREATED = 303;
+    MESSAGE_TYPE_NOTIFY_TASK_PROGRESS = 304;
+    MESSAGE_TYPE_NOTIFY_TASK_COMPLETED = 305;
+    MESSAGE_TYPE_NOTIFY_TASK_STATUS_CHANGED = 306;
+}
+
+// 客户端信息
+message ClientInfo {
+    string client_id         = 1;    // 客户端唯一标识
+    string server_client_id  = 2;    // 服务器端下发的客户端唯一标识（如有）
+    string hostname          = 3;    // 主机名
+    string ip_address        = 4;    // IP地址
+    string os_type           = 5;    // 操作系统类型
+    string os_version        = 6;    // 操作系统版本
+    int64 timestamp          = 7;    // 时间戳 (毫秒)
+    string user_data         = 8;    // 用户自定义扩展数据 (推荐JSON格式，可选)
+}
+
+// 磁盘信息
+message DiskInfo {
+    string disk_id        = 1;               // 磁盘标识
+    string server_client_id      = 2;               // 客户端唯一标识
+    string model          = 3;               // 磁盘型号
+    string serial_number  = 4;               // 序列号
+    string interface_type = 5;               // 接口类型 (如 SATA, NVMe, USB 等)
+    int64 total_size      = 6;               // 总容量(字节)
+    int64 used_size       = 7;               // 已用容量(字节)
+    int64 free_size       = 8;               // 可用容量(字节)
+    string file_system    = 9;               // 文件系统类型
+    bool is_system_disk   = 10;              // 是否系统盘
+    bool is_removable     = 11;              // 是否可移动磁盘
+    string mount_point    = 12;              // 挂载点
+    string health_status_text = 13;          // 健康状态描述 (如 Good, Warning, Bad)
+    double health_status  = 14;              // 健康状态 (0-100)
+    string smart_info     = 15;              // S.M.A.R.T. 信息 (可选，JSON格式推荐)
+    string user_data      = 16;              // 用户自定义扩展数据 (可选，JSON格式推荐)
+}
+
+// 擦除过程详细进度结构
+message ErasureProgress {
+    string task_id                  = 1;     // 关联的任务ID
+    string disk_id                  = 2;     // 关联的磁盘ID
+    string server_client_id                = 3;     // 客户端唯一标识
+    int32 current_pass              = 4;     // 当前第几遍擦除
+    int32 total_passes              = 5;     // 总擦除遍数
+    int32 current_step              = 6;     // 当前遍中的步骤索引
+    int32 total_steps_in_pass       = 7;     // 当前遍的总步骤数
+    string step_description         = 8;     // 当前步骤描述
+    int64 bytes_processed           = 9;     // 当前遍已处理字节数
+    int64 total_bytes               = 10;    // 当前遍总字节数
+    int32 progress_percent          = 11;    // 当前遍进度百分比（0-10000)
+    int64 erased_bytes              = 12;    // 已擦除总字节数
+    double speed_mb_per_s           = 13;    // 当前擦除速度 (MB/s)
+    int64 timestamp                 = 14;    // 进度时间戳 (毫秒)
+    string user_data                = 15;    // 用户自定义扩展数据 (JSON格式，可选)
+}
+
+enum TaskStatus {
+    UNKNOWN        = 0;          // 未知状态
+    PENDING        = 1;          // 待处理
+    STARTED        = 2;          // 已开始
+    IN_PROGRESS    = 3;          // 进行中
+    COMPLETED      = 4;          // 已完成
+    FAILED         = 5;          // 失败
+    PAUSED         = 6;          // 暂停
+    STOPPED        = 7;          // 停止
+}
+
+// 擦除任务信息
+message ErasureTask {
+    string task_id            = 1;           // 任务ID *
+    string disk_id            = 2;           // 要擦除的磁盘ID
+    string server_client_id          = 3;           // 客户端唯一标识
+    string erasure_method     = 4;           // 擦除方式标准 (如 Quick, BMB6, DOD7)
+    int32 pass_count          = 5;           // 计划擦除遍数
+    int32 pad_mode            = 6;           // 填充模式 (0: 00, 1: FF, 2: 随机) *
+    bool verification_enabled = 7;           // 是否启用验证*
+    TaskStatus status             = 8;       // 当前状态
+    int64 start_time              = 9;       // 开始时间戳 (毫秒)
+    int64 estimated_end_time      = 10;      // 结束/预计结束时间戳 (毫秒)
+    int32 progress_percent        = 11;      // 总进度百分比 (0-10000)
+    int64 total_bytes             = 12;      // 总字节数
+    int64 erased_bytes            = 13;      // 已擦除字节数
+    double speed_mb_per_s         = 14;      // 擦除速度 (MB/s)
+    string error_message          = 15;      // 错误信息 (可选)
+    bool verification_passed      = 16;      // 验证结果
+
+    DiskInfo disk_info                = 17;  // 磁盘详细信息 (可选)
+    string operator_name              = 18;  // 操作员 (可选)
+    string user_data                  = 19;  // 用户自定义扩展数据 (JSON格式，可选)
+}
+
+// 查询请求消息
+message QueryRequest {
+    string query_id = 1;  // 查询ID，用于匹配响应
+    
+    // 查询参数（根据query_type使用不同的字段）
+    enum QueryType {
+        QUERY_ALL_CLIENTS = 0;
+        QUERY_CLIENT_BY_ID = 1;
+        QUERY_CLIENT_DISKS = 2;
+        QUERY_ALL_TASKS = 3;
+        QUERY_TASKS_BY_CLIENT = 4;
+        QUERY_TASKS_BY_DISK = 5;
+        QUERY_TASK_BY_ID = 6;
+        QUERY_STATISTICS = 7;
+        QUERY_ACTIVE_TASKS = 8;
+        QUERY_COMPLETED_TASKS = 9;
+    }
+    QueryType query_type = 2;
+    
+    // 过滤条件
+    string filter_client_id = 3;
+    string filter_disk_id = 4;
+    string filter_task_id = 5;
+    TaskStatus filter_task_status = 6;
+    
+    // 分页参数
+    int32 page_index = 7;
+    int32 page_size = 8;
+    
+    string user_data = 9;
+}
+
+// 查询响应消息
+message QueryResponse {
+    string query_id = 1;  // 对应的查询ID
+    bool success = 2;
+    string error_message = 3;
+    
+    // 响应数据（根据query_type使用不同的字段）
+    repeated ClientInfo client_list = 4;
+    ClientInfo client_detail = 5;
+    repeated DiskInfo disk_list = 6;
+    repeated ErasureTask task_list = 7;
+    ErasureTask task_detail = 8;
+    
+    // 统计信息
+    int32 total_clients = 9;
+    int32 online_clients = 10;
+    int32 offline_clients = 11;
+    int32 total_tasks = 12;
+    int32 active_tasks = 13;
+    int32 completed_tasks = 14;
+    int32 failed_tasks = 15;
+    
+    // 分页信息
+    int32 total_count = 16;
+    int32 page_index = 17;
+    int32 page_size = 18;
+    
+    string user_data = 19;
+}
+
+// 主消息结构
+message Message {
+    MessageType      type            = 1;   // 消息类型
+    int64            timestamp       = 2;   // 消息时间戳 (毫秒)
+    ClientInfo       client_info     = 3;   // 客户端信息（注册、心跳等）
+    repeated DiskInfo disk_list      = 4;   // 磁盘信息列表（上报磁盘）
+    ErasureTask      task_info       = 5;   // 擦除任务信息（进度、状态更新）
+    ErasureProgress  progress_info   = 6;   // 实时擦除进度信息（如有）
+    int64            request_id      = 7;   // 关联的请求ID (用于请求-响应匹配)
+    string           user_data       = 8;   // 附加数据（JSON格式，可选）
+    
+    // Dashboard与ServerCore通信专用字段
+    QueryRequest     query_request   = 9;
+    QueryResponse    query_response  = 10;
+    
+    // 消息来源标识
+    MessageSource    source          = 11;
+}
+
+// 服务器响应消息
+message ServerResponse {
+    enum ResponseType {
+        RESPONSE_TYPE_ACK      = 0;           // 确认
+        RESPONSE_TYPE_NACK     = 1;           // 拒绝
+        RESPONSE_TYPE_ERROR    = 2;           // 错误
+        RESPONSE_TYPE_COMMAND  = 3;           // 命令
+        RESPONSE_TYPE_REGISTER = 4;
+    }
+
+    ResponseType type         = 1;           // 响应类型
+    bool success              = 2;           // 是否成功
+    string message            = 3;           // 响应消息/错误描述
+    string command            = 4;           // 服务器命令 (如 START_ERASURE)
+    string params             = 5;           // 命令参数 (JSON格式，可选)
+    string server_client_id   = 6;           // 服务器分配的客户端唯一标识 (用于注册响应等场景)
+    int64 request_id          = 7;           // 关联的请求ID (用于请求-响应匹配)
+}
