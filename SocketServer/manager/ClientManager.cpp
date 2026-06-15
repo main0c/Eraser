@@ -15,7 +15,7 @@ QString ClientManager::registerClient(const ClientInfo& clientInfo)
     // 1. 生成唯一的 server_client_id
     QString serverClientId = Utils::generateServerClientId();
     
-    // 2. 构建客户端包装对象
+    // 2. 构建客户端包装对象，并保留生成的服务端 client id
     ClientInfoWrap clientWrap;
     clientWrap.clientInfo = clientInfo;
     clientWrap.clientInfo.set_server_client_id(serverClientId.toStdString());
@@ -35,7 +35,8 @@ QString ClientManager::registerClient(const ClientInfo& clientInfo)
     
     // 4. 保存到数据库（带异常处理）
     try {
-        if (CheckResultDB::GetInstance().InsertClientInfo(clientInfo)) {
+        ClientInfo persistedClientInfo = clientWrap.clientInfo;
+        if (CheckResultDB::GetInstance().InsertClientInfo(persistedClientInfo)) {
             qDebug() << "客户端信息已保存到数据库:" << serverClientId;
         } else {
             qWarning() << "保存客户端信息到数据库失败:" << serverClientId;
@@ -223,8 +224,8 @@ void ClientManager::updateClientDisks(ClientInfo clientInfo, const std::vector<D
         QMutexLocker locker(&m_mutex);
 
         if (m_clients.contains(serverClientId)) {
-
             m_clients[serverClientId].diskList = newDisks;
+            m_clients[serverClientId].clientInfo.set_server_client_id(serverClientId.toStdString());
         } else {
             qWarning() << "尝试更新未知客户端的磁盘信息:" << serverClientId;
         }

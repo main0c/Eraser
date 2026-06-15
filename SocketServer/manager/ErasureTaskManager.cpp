@@ -284,17 +284,22 @@ bool ErasureTaskManager::hasActiveTaskForDisk(const QString& clientId, const QSt
 {
     QMutexLocker locker(&m_mutex);
     for (const auto& task : m_tasks.values()) {
-        if (QString::fromStdString(task.server_client_id()) == clientId &&
-                QString::fromStdString(task.disk_id()) == diskId &&
-                (task.status() == TaskStatus::STARTED ||
-                 task.status() == TaskStatus::IN_PROGRESS ||
-                 task.status() == TaskStatus::PAUSED)) {
-            if (!taskId.isEmpty() && QString::fromStdString(task.task_id()) == taskId) {
-                return true;
-            } else {
-                return false;
-            }
+        if (QString::fromStdString(task.server_client_id()) != clientId ||
+            QString::fromStdString(task.disk_id()) != diskId) {
+            continue;
         }
+
+        if (task.status() != TaskStatus::STARTED &&
+            task.status() != TaskStatus::IN_PROGRESS &&
+            task.status() != TaskStatus::PAUSED) {
+            continue;
+        }
+
+        if (!taskId.isEmpty() && QString::fromStdString(task.task_id()) == taskId) {
+            continue;
+        }
+
+        return true;
     }
     return false;
 }
@@ -483,8 +488,12 @@ bool ErasureTaskManager::updateTaskProgressImpl(const QString& taskId, double pr
     }
 
     ErasureTask task = m_tasks[taskId];
-    task.set_progress_percent(static_cast<int32_t>(qMin(100.0, progress) * 100.0));
-    task.set_erased_bytes(erasedBytes);
+    const double clampedProgress = qBound(0.0, progress, 1.0);
+    task.set_progress_percent(static_cast<int32_t>(qRound(clampedProgress * 10000.0)));
+    task.set_erased_bytes(qMax<qint64>(0, erasedBytes));
+    if (task.status() == TaskStatus::STARTED && task.progress_percent() > 0) {
+        task.set_status(TaskStatus::IN_PROGRESS);
+    }
     m_tasks[taskId] = task;
 
     locker.unlock();
@@ -508,6 +517,12 @@ bool ErasureTaskManager::updateTaskProgressImpl(const QString& taskId, const Era
     task.set_progress_percent(progress.progress_percent());
     task.set_erased_bytes(progress.erased_bytes());
     task.set_speed_mb_per_s(progress.speed_mb_per_s());
+    if (task.status() == TaskStatus::STARTED && task.progress_percent() > 0) {
+        task.set_status(TaskStatus::IN_PROGRESS);
+    }
+    if (progress.total_bytes() > 0) {
+        task.set_total_bytes(progress.total_bytes());
+    }
     m_tasks[taskId] = task;
 
     locker.unlock();

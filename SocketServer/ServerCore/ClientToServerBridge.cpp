@@ -284,8 +284,8 @@ void ClientToServerBridge::handleErasureStart(const Message& message)
     }
 
     const ErasureTask& taskInfo = message.task_info();
-    
-    QString taskId;
+
+    QString taskId = QString::fromStdString(taskInfo.task_id());
     m_taskManager->createTask(
         taskId,
         QString::fromStdString(taskInfo.server_client_id()),
