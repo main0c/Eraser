@@ -37,10 +37,13 @@ signals:
 private slots:
     void processMessages();
     void checkClientHeartbeats();
+    void runEventLoop();
+    void onWorkerFinished();
 
 private:
     void initializeZMQ();
     void cleanupZMQ();
+    bool readAndHandleMessage();
     
     bool handleMessage(const Message& message);
     bool handleClientRegister(const Message& message);
@@ -63,10 +66,13 @@ private:
     ErasureTaskManager* m_taskManager;
     
     QMutex m_mutex;
-    
+
+    QThread* m_workerThread;
+    bool m_stopRequested;
+
     QTimer* m_messageTimer;
     QTimer* m_heartbeatTimer;
-    
+
     static const int HEARTBEAT_INTERVAL = 30000;
     static const int CLIENT_TIMEOUT = 60000;
 };

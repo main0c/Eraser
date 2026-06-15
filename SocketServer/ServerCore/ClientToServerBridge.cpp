@@ -10,6 +10,8 @@ ClientToServerBridge::ClientToServerBridge(QObject *parent)
     , m_running(false)
     , m_clientManager(nullptr)
     , m_taskManager(nullptr)
+    , m_workerThread(nullptr)
+    , m_stopRequested(false)
     , m_messageTimer(nullptr)
     , m_heartbeatTimer(nullptr)
 {
@@ -28,19 +30,17 @@ bool ClientToServerBridge::start(const QString& bindAddress)
     }
 
     m_bindAddress = bindAddress;
-    initializeZMQ();
-
     m_running = true;
+    m_stopRequested = false;
 
-    // 启动消息处理定时器
-    m_messageTimer = new QTimer(this);
-    connect(m_messageTimer, &QTimer::timeout, this, &ClientToServerBridge::processMessages);
-    m_messageTimer->start(100); // 每100ms检查一次消息
+    m_workerThread = new QThread(this);
+    moveToThread(m_workerThread);
 
-    // 启动心跳检查定时器
-    m_heartbeatTimer = new QTimer(this);
-    connect(m_heartbeatTimer, &QTimer::timeout, this, &ClientToServerBridge::checkClientHeartbeats);
-    m_heartbeatTimer->start(HEARTBEAT_INTERVAL);
+    connect(m_workerThread, &QThread::started, this, &ClientToServerBridge::runEventLoop, Qt::DirectConnection);
+    connect(m_workerThread, &QThread::finished, this, &ClientToServerBridge::onWorkerFinished, Qt::DirectConnection);
+    connect(m_workerThread, &QThread::finished, m_workerThread, &QObject::deleteLater);
+
+    m_workerThread->start();
 
     emit bridgeStarted();
     qDebug() << "ClientToServerBridge started on" << bindAddress;
@@ -54,21 +54,13 @@ void ClientToServerBridge::stop()
     }
 
     m_running = false;
+    m_stopRequested = true;
 
-    if (m_messageTimer) {
-        m_messageTimer->stop();
-        delete m_messageTimer;
-        m_messageTimer = nullptr;
+    if (m_workerThread && m_workerThread->isRunning()) {
+        m_workerThread->quit();
+        m_workerThread->wait(2000);
     }
 
-    if (m_heartbeatTimer) {
-        m_heartbeatTimer->stop();
-        delete m_heartbeatTimer;
-        m_heartbeatTimer = nullptr;
-    }
-
-    cleanupZMQ();
-    emit bridgeStopped();
     qDebug() << "ClientToServerBridge stopped";
 }
 
@@ -93,6 +85,11 @@ void ClientToServerBridge::initializeZMQ()
     if (!m_context) {
         emit bridgeError("Failed to create ZMQ context");
         return;
+    }
+
+    int ioThreads = 4;
+    if (zmq_ctx_set(m_context, ZMQ_IO_THREADS, ioThreads) != 0) {
+        qWarning() << "Failed to set ZMQ IO thread count";
     }
 
     m_socket = zmq_socket(m_context, ZMQ_ROUTER);
@@ -129,50 +126,86 @@ void ClientToServerBridge::cleanupZMQ()
     }
 }
 
+void ClientToServerBridge::runEventLoop()
+{
+    initializeZMQ();
+    if (!m_socket) {
+        m_running = false;
+        emit bridgeError("Failed to initialize ZMQ socket");
+        return;
+    }
+
+    processMessages();
+}
+
+void ClientToServerBridge::onWorkerFinished()
+{
+    cleanupZMQ();
+    emit bridgeStopped();
+}
+
 void ClientToServerBridge::processMessages()
 {
     if (!m_running || !m_socket) {
         return;
     }
 
-    while (true) {
-        zmq_msg_t identity;
-        zmq_msg_init(&identity);
-        
-        if (zmq_msg_recv(&identity, m_socket, ZMQ_DONTWAIT) < 0) {
-            zmq_msg_close(&identity);
+    while (m_running) {
+        zmq_pollitem_t items[] = {{m_socket, 0, ZMQ_POLLIN, 0}};
+        int rc = zmq_poll(items, 1, 100);
+        if (rc < 0) {
             break;
         }
 
-        // 接收空分隔符
-        zmq_msg_t delimiter;
-        zmq_msg_init(&delimiter);
-        zmq_msg_recv(&delimiter, m_socket, 0);
+        if (!(items[0].revents & ZMQ_POLLIN)) {
+            continue;
+        }
+
+        if (!readAndHandleMessage()) {
+            break;
+        }
+    }
+}
+
+bool ClientToServerBridge::readAndHandleMessage()
+{
+    zmq_msg_t identity;
+    zmq_msg_init(&identity);
+
+    if (zmq_msg_recv(&identity, m_socket, 0) < 0) {
+        zmq_msg_close(&identity);
+        return false;
+    }
+
+    zmq_msg_t delimiter;
+    zmq_msg_init(&delimiter);
+    if (zmq_msg_recv(&delimiter, m_socket, 0) < 0) {
+        zmq_msg_close(&identity);
         zmq_msg_close(&delimiter);
+        return false;
+    }
+    zmq_msg_close(&delimiter);
 
-        // 接收消息内容
-        zmq_msg_t content;
-        zmq_msg_init(&content);
-        int size = zmq_msg_recv(&content, m_socket, 0);
-        
-        if (size < 0) {
-            zmq_msg_close(&identity);
-            zmq_msg_close(&content);
-            break;
-        }
-
-        // 解析消息
-        QByteArray data(static_cast<char*>(zmq_msg_data(&content)), size);
-        Message message;
-        if (message.ParseFromArray(data.data(), data.size())) {
-            handleMessage(message);
-        } else {
-            qWarning() << "Failed to parse message";
-        }
-
+    zmq_msg_t content;
+    zmq_msg_init(&content);
+    int size = zmq_msg_recv(&content, m_socket, 0);
+    if (size < 0) {
         zmq_msg_close(&identity);
         zmq_msg_close(&content);
+        return false;
     }
+
+    QByteArray data(static_cast<char*>(zmq_msg_data(&content)), size);
+    Message message;
+    if (message.ParseFromArray(data.data(), data.size())) {
+        handleMessage(message);
+    } else {
+        qWarning() << "Failed to parse message";
+    }
+
+    zmq_msg_close(&identity);
+    zmq_msg_close(&content);
+    return true;
 }
 
 bool ClientToServerBridge::handleMessage(const Message& message)

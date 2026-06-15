@@ -11,6 +11,8 @@ DashboardToServerBridge::DashboardToServerBridge(QObject *parent)
     , m_clientManager(nullptr)
     , m_taskManager(nullptr)
     , m_messageTimer(nullptr)
+    , m_workerThread(nullptr)
+    , m_stopRequested(false)
 {
 }
 
@@ -27,13 +29,17 @@ bool DashboardToServerBridge::start(const QString& bindAddress)
     }
 
     m_bindAddress = bindAddress;
-    initializeZMQ();
-
     m_running = true;
+    m_stopRequested = false;
 
-    m_messageTimer = new QTimer(this);
-    connect(m_messageTimer, &QTimer::timeout, this, &DashboardToServerBridge::processMessages);
-    m_messageTimer->start(100);
+    m_workerThread = new QThread(this);
+    moveToThread(m_workerThread);
+
+    connect(m_workerThread, &QThread::started, this, &DashboardToServerBridge::runEventLoop, Qt::DirectConnection);
+    connect(m_workerThread, &QThread::finished, this, &DashboardToServerBridge::onWorkerFinished, Qt::DirectConnection);
+    connect(m_workerThread, &QThread::finished, m_workerThread, &QObject::deleteLater);
+
+    m_workerThread->start();
 
     qDebug() << "DashboardToServerBridge started on" << bindAddress;
     return true;
@@ -46,14 +52,13 @@ void DashboardToServerBridge::stop()
     }
 
     m_running = false;
+    m_stopRequested = true;
 
-    if (m_messageTimer) {
-        m_messageTimer->stop();
-        delete m_messageTimer;
-        m_messageTimer = nullptr;
+    if (m_workerThread && m_workerThread->isRunning()) {
+        m_workerThread->quit();
+        m_workerThread->wait(2000);
     }
 
-    cleanupZMQ();
     qDebug() << "DashboardToServerBridge stopped";
 }
 
@@ -78,6 +83,11 @@ void DashboardToServerBridge::initializeZMQ()
     if (!m_context) {
         qCritical() << "Failed to create ZMQ context";
         return;
+    }
+
+    int ioThreads = 4;
+    if (zmq_ctx_set(m_context, ZMQ_IO_THREADS, ioThreads) != 0) {
+        qWarning() << "Failed to set ZMQ IO thread count";
     }
 
     m_socket = zmq_socket(m_context, ZMQ_ROUTER);
@@ -113,63 +123,98 @@ void DashboardToServerBridge::cleanupZMQ()
     }
 }
 
+void DashboardToServerBridge::runEventLoop()
+{
+    initializeZMQ();
+    if (!m_socket) {
+        m_running = false;
+        emit bridgeError("Failed to initialize ZMQ socket");
+        return;
+    }
+
+    processMessages();
+}
+
+void DashboardToServerBridge::onWorkerFinished()
+{
+    cleanupZMQ();
+}
+
 void DashboardToServerBridge::processMessages()
 {
     if (!m_running || !m_socket) {
         return;
     }
 
-    while (true) {
-        zmq_msg_t identity;
-        zmq_msg_init(&identity);
-        
-        if (zmq_msg_recv(&identity, m_socket, ZMQ_DONTWAIT) < 0) {
-            zmq_msg_close(&identity);
+    while (m_running) {
+        zmq_pollitem_t items[] = {{m_socket, 0, ZMQ_POLLIN, 0}};
+        int rc = zmq_poll(items, 1, 100);
+        if (rc < 0) {
             break;
         }
 
-        QString dashboardId = QString::fromUtf8(
-            static_cast<char*>(zmq_msg_data(&identity)),
-            zmq_msg_size(&identity)
-        );
+        if (!(items[0].revents & ZMQ_POLLIN)) {
+            continue;
+        }
 
-        // 记录已连接的Dashboard并更新活跃时间
-        m_connectedDashboards[dashboardId] = QDateTime::currentMSecsSinceEpoch();
-        cleanupStaleDashboards();
+        if (!readAndHandleMessage()) {
+            break;
+        }
+    }
+}
 
-        // 接收空分隔符
-        zmq_msg_t delimiter;
-        zmq_msg_init(&delimiter);
-        zmq_msg_recv(&delimiter, m_socket, 0);
+bool DashboardToServerBridge::readAndHandleMessage()
+{
+    zmq_msg_t identity;
+    zmq_msg_init(&identity);
+
+    if (zmq_msg_recv(&identity, m_socket, 0) < 0) {
+        zmq_msg_close(&identity);
+        return false;
+    }
+
+    QString dashboardId = QString::fromUtf8(
+        static_cast<char*>(zmq_msg_data(&identity)),
+        zmq_msg_size(&identity)
+    );
+
+    m_connectedDashboards[dashboardId] = QDateTime::currentMSecsSinceEpoch();
+    cleanupStaleDashboards();
+
+    zmq_msg_t delimiter;
+    zmq_msg_init(&delimiter);
+    if (zmq_msg_recv(&delimiter, m_socket, 0) < 0) {
+        zmq_msg_close(&identity);
         zmq_msg_close(&delimiter);
+        return false;
+    }
+    zmq_msg_close(&delimiter);
 
-        // 接收消息内容
-        zmq_msg_t content;
-        zmq_msg_init(&content);
-        int size = zmq_msg_recv(&content, m_socket, 0);
-        
-        if (size < 0) {
-            zmq_msg_close(&identity);
-            zmq_msg_close(&content);
-            break;
-        }
-
-        QByteArray data(static_cast<char*>(zmq_msg_data(&content)), size);
-        Message message;
-        if (message.ParseFromArray(data.data(), data.size())) {
-            if (message.type() == MESSAGE_TYPE_QUERY_CLIENTS ||
-                message.type() == MESSAGE_TYPE_QUERY_CLIENT_DETAIL ||
-                message.type() == MESSAGE_TYPE_QUERY_DISK_INFO ||
-                message.type() == MESSAGE_TYPE_QUERY_TASKS ||
-                message.type() == MESSAGE_TYPE_QUERY_TASK_DETAIL ||
-                message.type() == MESSAGE_TYPE_QUERY_STATISTICS) {
-                handleQueryRequest(message, dashboardId);
-            }
-        }
-
+    zmq_msg_t content;
+    zmq_msg_init(&content);
+    int size = zmq_msg_recv(&content, m_socket, 0);
+    if (size < 0) {
         zmq_msg_close(&identity);
         zmq_msg_close(&content);
+        return false;
     }
+
+    QByteArray data(static_cast<char*>(zmq_msg_data(&content)), size);
+    Message message;
+    if (message.ParseFromArray(data.data(), data.size())) {
+        if (message.type() == MESSAGE_TYPE_QUERY_CLIENTS ||
+            message.type() == MESSAGE_TYPE_QUERY_CLIENT_DETAIL ||
+            message.type() == MESSAGE_TYPE_QUERY_DISK_INFO ||
+            message.type() == MESSAGE_TYPE_QUERY_TASKS ||
+            message.type() == MESSAGE_TYPE_QUERY_TASK_DETAIL ||
+            message.type() == MESSAGE_TYPE_QUERY_STATISTICS) {
+            handleQueryRequest(message, dashboardId);
+        }
+    }
+
+    zmq_msg_close(&identity);
+    zmq_msg_close(&content);
+    return true;
 }
 
 void DashboardToServerBridge::handleQueryRequest(const Message& message, const QString& dashboardId)

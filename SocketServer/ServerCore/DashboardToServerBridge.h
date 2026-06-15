@@ -41,10 +41,13 @@ public:
 
 private slots:
     void processMessages();
+    void runEventLoop();
+    void onWorkerFinished();
 
 private:
     void initializeZMQ();
     void cleanupZMQ();
+    bool readAndHandleMessage();
     
     void handleQueryRequest(const Message& message, const QString& dashboardId);
     void handleQueryClients(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
@@ -69,6 +72,8 @@ private:
     
     QMutex m_mutex;
     QTimer* m_messageTimer;
+    QThread* m_workerThread;
+    bool m_stopRequested;
     
     // 跟踪已连接的Dashboard及最近活跃时间
     QHash<QString, quint64> m_connectedDashboards;

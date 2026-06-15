@@ -42,7 +42,7 @@ bool ServerCoreApplication::initialize()
     }
 
     // 创建通信桥接器
-    m_clientBridge = new ClientToServerBridge(this);
+    m_clientBridge = new ClientToServerBridge(nullptr);
     if (!m_clientBridge) {
         qCritical() << "Failed to create ClientToServerBridge";
         delete m_taskManager;
@@ -54,7 +54,7 @@ bool ServerCoreApplication::initialize()
     m_clientBridge->setClientManager(m_clientManager);
     m_clientBridge->setTaskManager(m_taskManager);
 
-    m_dashboardBridge = new DashboardToServerBridge(this);
+    m_dashboardBridge = new DashboardToServerBridge(nullptr);
     if (!m_dashboardBridge) {
         qCritical() << "Failed to create DashboardToServerBridge";
         delete m_clientBridge;
