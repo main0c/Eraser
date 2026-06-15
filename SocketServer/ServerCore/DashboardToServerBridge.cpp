@@ -35,7 +35,7 @@ bool DashboardToServerBridge::start(const QString& bindAddress)
     connect(m_messageTimer, &QTimer::timeout, this, &DashboardToServerBridge::processMessages);
     m_messageTimer->start(100);
 
-    emit qDebug() << "DashboardToServerBridge started on" << bindAddress;
+    qDebug() << "DashboardToServerBridge started on" << bindAddress;
     return true;
 }
 
@@ -133,8 +133,9 @@ void DashboardToServerBridge::processMessages()
             zmq_msg_size(&identity)
         );
 
-        // 记录已连接的Dashboard
-        m_connectedDashboards[dashboardId] = true;
+        // 记录已连接的Dashboard并更新活跃时间
+        m_connectedDashboards[dashboardId] = QDateTime::currentMSecsSinceEpoch();
+        cleanupStaleDashboards();
 
         // 接收空分隔符
         zmq_msg_t delimiter;
@@ -162,7 +163,7 @@ void DashboardToServerBridge::processMessages()
                 message.type() == MESSAGE_TYPE_QUERY_TASKS ||
                 message.type() == MESSAGE_TYPE_QUERY_TASK_DETAIL ||
                 message.type() == MESSAGE_TYPE_QUERY_STATISTICS) {
-                handleQueryRequest(message);
+                handleQueryRequest(message, dashboardId);
             }
         }
 
@@ -171,33 +172,33 @@ void DashboardToServerBridge::processMessages()
     }
 }
 
-void DashboardToServerBridge::handleQueryRequest(const Message& message)
+void DashboardToServerBridge::handleQueryRequest(const Message& message, const QString& dashboardId)
 {
     const QueryRequest& query = message.query_request();
     QString requestId = QString::fromStdString(query.query_id());
 
     switch (query.query_type()) {
     case QueryRequest::QUERY_ALL_CLIENTS:
-        handleQueryClients(query, requestId);
+        handleQueryClients(query, requestId, dashboardId);
         break;
     case QueryRequest::QUERY_CLIENT_BY_ID:
-        handleQueryClientDetail(query, requestId);
+        handleQueryClientDetail(query, requestId, dashboardId);
         break;
     case QueryRequest::QUERY_CLIENT_DISKS:
-        handleQueryDiskInfo(query, requestId);
+        handleQueryDiskInfo(query, requestId, dashboardId);
         break;
     case QueryRequest::QUERY_ALL_TASKS:
     case QueryRequest::QUERY_TASKS_BY_CLIENT:
     case QueryRequest::QUERY_TASKS_BY_DISK:
     case QueryRequest::QUERY_ACTIVE_TASKS:
     case QueryRequest::QUERY_COMPLETED_TASKS:
-        handleQueryTasks(query, requestId);
+        handleQueryTasks(query, requestId, dashboardId);
         break;
     case QueryRequest::QUERY_TASK_BY_ID:
-        handleQueryTaskDetail(query, requestId);
+        handleQueryTaskDetail(query, requestId, dashboardId);
         break;
     case QueryRequest::QUERY_STATISTICS:
-        handleQueryStatistics(query, requestId);
+        handleQueryStatistics(query, requestId, dashboardId);
         break;
     default:
         qWarning() << "Unknown query type:" << query.query_type();
@@ -205,7 +206,7 @@ void DashboardToServerBridge::handleQueryRequest(const Message& message)
     }
 }
 
-void DashboardToServerBridge::handleQueryClients(const QueryRequest& query, const QString& requestId)
+void DashboardToServerBridge::handleQueryClients(const QueryRequest& query, const QString& requestId, const QString& dashboardId)
 {
     if (!m_clientManager) {
         return;
@@ -229,11 +230,11 @@ void DashboardToServerBridge::handleQueryClients(const QueryRequest& query, cons
         *info = clientWrap.clientInfo;
     }
 
-    // 发送给请求的Dashboard
-    sendResponse("", response);
+    // 只发送给发起查询的Dashboard
+    sendResponse(dashboardId, response);
 }
 
-void DashboardToServerBridge::handleQueryClientDetail(const QueryRequest& query, const QString& requestId)
+void DashboardToServerBridge::handleQueryClientDetail(const QueryRequest& query, const QString& requestId, const QString& dashboardId)
 {
     if (!m_clientManager) {
         return;
@@ -257,10 +258,10 @@ void DashboardToServerBridge::handleQueryClientDetail(const QueryRequest& query,
         queryResp->set_error_message("Client not found");
     }
 
-    sendResponse("", response);
+    sendResponse(dashboardId, response);
 }
 
-void DashboardToServerBridge::handleQueryDiskInfo(const QueryRequest& query, const QString& requestId)
+void DashboardToServerBridge::handleQueryDiskInfo(const QueryRequest& query, const QString& requestId, const QString& dashboardId)
 {
     if (!m_clientManager) {
         return;
@@ -282,10 +283,10 @@ void DashboardToServerBridge::handleQueryDiskInfo(const QueryRequest& query, con
     }
 
     queryResp->set_success(true);
-    sendResponse("", response);
+    sendResponse(dashboardId, response);
 }
 
-void DashboardToServerBridge::handleQueryTasks(const QueryRequest& query, const QString& requestId)
+void DashboardToServerBridge::handleQueryTasks(const QueryRequest& query, const QString& requestId, const QString& dashboardId)
 {
     if (!m_taskManager) {
         return;
@@ -332,10 +333,10 @@ void DashboardToServerBridge::handleQueryTasks(const QueryRequest& query, const 
         *t = task;
     }
 
-    sendResponse("", response);
+    sendResponse(dashboardId, response);
 }
 
-void DashboardToServerBridge::handleQueryTaskDetail(const QueryRequest& query, const QString& requestId)
+void DashboardToServerBridge::handleQueryTaskDetail(const QueryRequest& query, const QString& requestId, const QString& dashboardId)
 {
     if (!m_taskManager) {
         return;
@@ -359,10 +360,10 @@ void DashboardToServerBridge::handleQueryTaskDetail(const QueryRequest& query, c
         queryResp->set_error_message("Task not found");
     }
 
-    sendResponse("", response);
+    sendResponse(dashboardId, response);
 }
 
-void DashboardToServerBridge::handleQueryStatistics(const QueryRequest& query, const QString& requestId)
+void DashboardToServerBridge::handleQueryStatistics(const QueryRequest& query, const QString& requestId, const QString& dashboardId)
 {
     if (!m_clientManager || !m_taskManager) {
         return;
@@ -409,7 +410,23 @@ void DashboardToServerBridge::handleQueryStatistics(const QueryRequest& query, c
     queryResp->set_completed_tasks(completedCount);
     queryResp->set_failed_tasks(failedCount);
 
-    sendResponse("", response);
+    sendResponse(dashboardId, response);
+}
+
+void DashboardToServerBridge::cleanupStaleDashboards()
+{
+    const quint64 now = QDateTime::currentMSecsSinceEpoch();
+    QStringList staleIds;
+
+    for (auto it = m_connectedDashboards.begin(); it != m_connectedDashboards.end(); ++it) {
+        if (now - it.value() > DASHBOARD_TIMEOUT_MS) {
+            staleIds.append(it.key());
+        }
+    }
+
+    for (const QString& dashboardId : staleIds) {
+        m_connectedDashboards.remove(dashboardId);
+    }
 }
 
 void DashboardToServerBridge::sendResponse(const QString& dashboardId, const Message& response)
@@ -421,13 +438,11 @@ void DashboardToServerBridge::sendResponse(const QString& dashboardId, const Mes
     std::string serialized;
     response.SerializeToString(&serialized);
 
-    // 如果dashboardId为空，则广播给所有Dashboard
     if (dashboardId.isEmpty()) {
         broadcastToAllDashboards(response);
         return;
     }
 
-    // 发送给特定Dashboard
     zmq_msg_t identity;
     zmq_msg_init_size(&identity, dashboardId.toUtf8().size());
     memcpy(zmq_msg_data(&identity), dashboardId.toUtf8().data(), dashboardId.toUtf8().size());

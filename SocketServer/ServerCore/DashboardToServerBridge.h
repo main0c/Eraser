@@ -46,14 +46,15 @@ private:
     void initializeZMQ();
     void cleanupZMQ();
     
-    void handleQueryRequest(const Message& message);
-    void handleQueryClients(const QueryRequest& query, const QString& requestId);
-    void handleQueryClientDetail(const QueryRequest& query, const QString& requestId);
-    void handleQueryDiskInfo(const QueryRequest& query, const QString& requestId);
-    void handleQueryTasks(const QueryRequest& query, const QString& requestId);
-    void handleQueryTaskDetail(const QueryRequest& query, const QString& requestId);
-    void handleQueryStatistics(const QueryRequest& query, const QString& requestId);
+    void handleQueryRequest(const Message& message, const QString& dashboardId);
+    void handleQueryClients(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
+    void handleQueryClientDetail(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
+    void handleQueryDiskInfo(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
+    void handleQueryTasks(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
+    void handleQueryTaskDetail(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
+    void handleQueryStatistics(const QueryRequest& query, const QString& requestId, const QString& dashboardId);
 
+    void cleanupStaleDashboards();
     void sendResponse(const QString& dashboardId, const Message& response);
     void broadcastToAllDashboards(const Message& message);
 
@@ -69,8 +70,9 @@ private:
     QMutex m_mutex;
     QTimer* m_messageTimer;
     
-    // 跟踪已连接的Dashboard
-    QHash<QString, bool> m_connectedDashboards;
+    // 跟踪已连接的Dashboard及最近活跃时间
+    QHash<QString, quint64> m_connectedDashboards;
+    static const int DASHBOARD_TIMEOUT_MS = 60000;
 };
 
 #endif // DASHBOARDTOSERVERBRIDGE_H
