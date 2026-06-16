@@ -47,7 +47,7 @@ QString ClientManager::registerClient(const ClientInfo& clientInfo)
     }
     
     // 5. 发送信号
-    emit clientRegistered(serverClientId, clientWrap.clientInfo);
+    emit clientRegistered(serverClientId, Utils::serializeClientInfo(clientWrap.clientInfo));
     
     return serverClientId;
 }
@@ -101,7 +101,7 @@ QStringList ClientManager::getOnlineClientIds()
 {
     QMutexLocker locker(&m_mutex);
     QStringList onlineIds;
-    for (const auto& clientData : m_clients.values()) {
+    for (const ClientInfoWrap& clientData : m_clients.values()) {
         if (clientData.isOnline) {
             onlineIds.append(QString::fromStdString(clientData.clientInfo.server_client_id()));
         }
@@ -113,7 +113,7 @@ QStringList ClientManager::getOfflineClientIds()
 {
     QMutexLocker locker(&m_mutex);
     QStringList offlineIds;
-    for (const auto& clientData : m_clients.values()) {
+    for (const ClientInfoWrap& clientData : m_clients.values()) {
         if (!clientData.isOnline) {
             offlineIds.append(QString::fromStdString(clientData.clientInfo.server_client_id()));
         }
@@ -131,7 +131,7 @@ int ClientManager::getOnlineClientCount()
 {
     QMutexLocker locker(&m_mutex);
     int count = 0;
-    for (const auto& clientData : m_clients.values()) {
+    for (const ClientInfoWrap& clientData : m_clients.values()) {
         if (clientData.isOnline) {
             count++;
         }
@@ -143,7 +143,7 @@ int ClientManager::getOfflineClientCount()
 {
     QMutexLocker locker(&m_mutex);
     int count = 0;
-    for (const auto& clientData : m_clients.values()) {
+    for (const ClientInfoWrap& clientData : m_clients.values()) {
         if (!clientData.isOnline) {
             count++;
         }

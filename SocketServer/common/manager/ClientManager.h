@@ -55,7 +55,7 @@ public:
     void clearAll();  // 清空所有客户端数据
     
 signals:
-    void clientRegistered(const QString& serverClientId, const ClientInfo& clientInfo);
+    void clientRegistered(const QString& serverClientId, const QByteArray& clientData); //ClientInfo& clientInfo
     void clientUnregistered(const QString& serverClientId, const QString& reason);
     void clientHeartbeatUpdated(const QString& serverClientId);
     void clientDisksUpdated(const QString& serverClientId, int diskCount);

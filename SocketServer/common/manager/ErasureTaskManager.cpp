@@ -169,7 +169,7 @@ QList<ErasureTask> ErasureTaskManager::getTasksByClient(const QString& clientId)
 {
     QMutexLocker locker(&m_mutex);
     QList<ErasureTask> result;
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (QString::fromStdString(task.server_client_id()) == clientId) {
             result.append(task);
         }
@@ -181,7 +181,7 @@ QList<ErasureTask> ErasureTaskManager::getTasksByDisk(const QString& clientId, c
 {
     QMutexLocker locker(&m_mutex);
     QList<ErasureTask> result;
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (QString::fromStdString(task.server_client_id()) == clientId &&
             QString::fromStdString(task.disk_id()) == diskId) {
             result.append(task);
@@ -194,7 +194,7 @@ QList<ErasureTask> ErasureTaskManager::getActiveTasks()
 {
     QMutexLocker locker(&m_mutex);
     QList<ErasureTask> activeTasks;
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (task.status() == TaskStatus::STARTED ||
             task.status() == TaskStatus::IN_PROGRESS ||
             task.status() == TaskStatus::PAUSED) {
@@ -208,7 +208,7 @@ QList<ErasureTask> ErasureTaskManager::getActiveTasksByClient(const QString& cli
 {
     QMutexLocker locker(&m_mutex);
     QList<ErasureTask> activeTasks;
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (QString::fromStdString(task.server_client_id()) == clientId &&
             (task.status() == TaskStatus::STARTED ||
              task.status() == TaskStatus::IN_PROGRESS ||
@@ -223,7 +223,7 @@ QList<ErasureTask> ErasureTaskManager::getCompletedTasks()
 {
     QMutexLocker locker(&m_mutex);
     QList<ErasureTask> completedTasks;
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (task.status() == TaskStatus::COMPLETED ||
             task.status() == TaskStatus::FAILED ||
             task.status() == TaskStatus::STOPPED) {
@@ -237,7 +237,7 @@ QList<ErasureTask> ErasureTaskManager::getCompletedTasksByClient(const QString& 
 {
     QMutexLocker locker(&m_mutex);
     QList<ErasureTask> completedTasks;
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (QString::fromStdString(task.server_client_id()) == clientId &&
             (task.status() == TaskStatus::COMPLETED ||
              task.status() == TaskStatus::FAILED ||
@@ -272,7 +272,7 @@ bool ErasureTaskManager::hasTask(const QString& taskId)
 bool ErasureTaskManager::hasActiveTaskForDisk(const QString& clientId, const QString& diskId, const QString& taskId)
 {
     QMutexLocker locker(&m_mutex);
-    for (const auto& task : m_tasks.values()) {
+    for (const ErasureTask& task : m_tasks.values()) {
         if (QString::fromStdString(task.server_client_id()) != clientId ||
             QString::fromStdString(task.disk_id()) != diskId) {
             continue;

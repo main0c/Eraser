@@ -364,7 +364,7 @@ void ClientMainWindow::updateProgressDisplay()
     QList<ErasureTask> activeTasks = m_taskManager->getActiveTasks();
     
     // 1. 通过新的 DiskInfoWidget 更新磁盘列表中的进度
-    for (const auto& task : activeTasks) {
+    for (const ErasureTask& task : activeTasks) {
         // 通知 widget 更新该磁盘的进度信息
         m_diskInfoWidget->updateDiskProgress(task);
     }
@@ -586,8 +586,8 @@ void ClientMainWindow::generateDiskInfo()
     
     // 统计生成的磁盘总数
     int totalDiskCount = 0;
-    for (const auto& client : m_clientList) {
-        totalDiskCount += client.diskList.size();
+    for (const ClientInfoWrap& clientWrap : m_clientList) {
+        totalDiskCount += clientWrap.diskList.size();
     }
     
     addLogEntry(QString("重新生成了 %1 个模拟磁盘").arg(totalDiskCount));
@@ -1251,7 +1251,7 @@ void ClientMainWindow::testMultiClientMode()
     // 更新显示
     m_diskInfoWidget->setClientList(m_clientList);
     int count = 0;
-    for (const auto& clientWrap : m_clientList) {
+    for (const ClientInfoWrap& clientWrap : m_clientList) {
         count +=clientWrap.diskList.size();
     }
     
@@ -1510,7 +1510,7 @@ void ClientMainWindow::restoreUnfinishedTasksFromDB()
     vector<ErasureTask> allTasks = CheckResultDB::GetInstance().SelectTasksByClient(clientId.toStdString());
     
     int restoredCount = 0;
-    for (const auto& task : allTasks) {
+    for (const ErasureTask& task : allTasks) {
         TaskStatus status = task.status();
         
         // 只恢夏未完成的任务（进行中、暂停状态）

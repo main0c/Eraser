@@ -392,7 +392,7 @@ void TaskListWidget::updateTaskTree()
         // 三级结构：客户端 -> 磁盘 -> 任务
         // 1. 按客户端ID分组
         QMap<QString, QList<ErasureTask>> clientTasksMap;
-        for (const auto& task : filteredTasks) {
+        for (const ErasureTask& task : filteredTasks) {
             clientTasksMap[QString::fromStdString(task.server_client_id())].append(task);
         }
 
@@ -426,7 +426,7 @@ void TaskListWidget::updateTaskTree()
 
             // 2. 在该客户端下，按磁盘ID分组
             QMap<QString, QList<ErasureTask>> diskTasksMap;
-            for (const auto& task : cTasks) {
+            for (const ErasureTask& task : cTasks) {
                 diskTasksMap[QString::fromStdString(task.disk_id())].append(task);
             }
 
@@ -690,7 +690,7 @@ void TaskListWidget::updateDetailView(const QString& taskId)
 
     ErasureTask task;
     bool found = false;
-    for (const auto& t : m_taskManager->getAllTasks()) {
+    for (const ErasureTask& t : m_taskManager->getAllTasks()) {
         if (QString::fromStdString(t.task_id()) == taskId) {
             task = t;
             found = true;

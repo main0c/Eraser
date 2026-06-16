@@ -718,7 +718,7 @@ QString DiskInfoWidget::generateDiskDetailHtml(const ClientDiskInfo& disk) const
 // 显示磁盘详细信息
 void DiskInfoWidget::showDiskDetail(const QString& diskId)
 {
-    for (const auto& disk : m_diskList) {
+    for (const ClientDiskInfo& disk : m_diskList) {
         if (QString::fromStdString(disk.info.disk_id()) == diskId) {
             QString html = generateDiskDetailHtml(disk);
             m_detailTextEdit->setHtml(html);
