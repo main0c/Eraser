@@ -75,17 +75,6 @@ ErasureTask ErasureTaskManager::createTask(QString& taskId, const QString& clien
     return task;
 }
 
-bool ErasureTaskManager::updateTaskProgress(const QString& taskId, double progress, qint64 erasedBytes)
-{
-    if (m_workerThread) {
-        enqueueOperation([this, taskId, progress, erasedBytes]() {
-            updateTaskProgressImpl(taskId, progress, erasedBytes);
-        });
-        return true;
-    }
-    return updateTaskProgressImpl(taskId, progress, erasedBytes);
-}
-
 bool ErasureTaskManager::updateTaskProgress(const QString& taskId, const ErasureProgress& progress)
 {
     if (m_workerThread) {
@@ -479,32 +468,6 @@ void ErasureTaskManager::createTaskImpl(const QString& taskId, const QString& cl
     qDebug() << "创建擦除任务:" << taskId << "客户端:" << clientId << "磁盘:" << diskId;
 }
 
-bool ErasureTaskManager::updateTaskProgressImpl(const QString& taskId, double progress, qint64 erasedBytes)
-{
-    QMutexLocker locker(&m_mutex);
-
-    if (!m_tasks.contains(taskId)) {
-        return false;
-    }
-
-    ErasureTask task = m_tasks[taskId];
-    const double clampedProgress = qBound(0.0, progress, 1.0);
-    task.set_progress_percent(static_cast<int32_t>(qRound(clampedProgress * 10000.0)));
-    task.set_erased_bytes(qMax<qint64>(0, erasedBytes));
-    if (task.status() == TaskStatus::STARTED && task.progress_percent() > 0) {
-        task.set_status(TaskStatus::IN_PROGRESS);
-    }
-    m_tasks[taskId] = task;
-
-    locker.unlock();
-    updateTaskInStorage(task);
-
-    QByteArray taskData = Utils::serializeTask(task);
-    emit taskProgressUpdated(taskData);
-
-    return true;
-}
-
 bool ErasureTaskManager::updateTaskProgressImpl(const QString& taskId, const ErasureProgress& progress)
 {
     QMutexLocker locker(&m_mutex);
@@ -517,18 +480,12 @@ bool ErasureTaskManager::updateTaskProgressImpl(const QString& taskId, const Era
     task.set_progress_percent(progress.progress_percent());
     task.set_erased_bytes(progress.erased_bytes());
     task.set_speed_mb_per_s(progress.speed_mb_per_s());
-    if (task.status() == TaskStatus::STARTED && task.progress_percent() > 0) {
-        task.set_status(TaskStatus::IN_PROGRESS);
-    }
-    if (progress.total_bytes() > 0) {
-        task.set_total_bytes(progress.total_bytes());
-    }
     m_tasks[taskId] = task;
 
     locker.unlock();
     updateTaskInStorage(task);
 
-    QByteArray taskData = Utils::serializeTask(task);
+    QByteArray taskData = Utils::serializeProgress(progress);
     emit taskProgressUpdated(taskData);
 
     return true;

@@ -128,7 +128,6 @@ void DashboardToServerBridge::runEventLoop()
     initializeZMQ();
     if (!m_socket) {
         m_running = false;
-        emit bridgeError("Failed to initialize ZMQ socket");
         return;
     }
 
@@ -581,40 +580,63 @@ void DashboardToServerBridge::notifyDiskUpdated(const QString& serverClientId, c
 
 void DashboardToServerBridge::notifyTaskCreated(const QByteArray& taskData)
 {
+    ErasureTask task;
+    if (!task.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "DashboardToServerBridge: taskCreated 反序列化失败";
+        return;
+    }
+
     Message notification;
     notification.set_type(MESSAGE_TYPE_NOTIFY_TASK_CREATED);
     notification.set_timestamp(QDateTime::currentMSecsSinceEpoch());
-    notification.set_user_data(std::string(taskData.data(), taskData.size()));
+    *notification.mutable_task_info() = task;
 
     broadcastToAllDashboards(notification);
 }
 
-void DashboardToServerBridge::notifyTaskProgressUpdate(const QByteArray& taskData)
+void DashboardToServerBridge::notifyTaskProgressUpdate(const QByteArray& progressData)
 {
+    ErasureProgress progress;
+    if (!progress.ParseFromArray(progressData.constData(), progressData.size())) {
+        qWarning() << "DashboardToServerBridge: taskProgressUpdate 反序列化失败";
+        return;
+    }
     Message notification;
     notification.set_type(MESSAGE_TYPE_NOTIFY_TASK_PROGRESS);
     notification.set_timestamp(QDateTime::currentMSecsSinceEpoch());
-    notification.set_user_data(std::string(taskData.data(), taskData.size()));
+    *notification.mutable_progress_info() = progress;
 
     broadcastToAllDashboards(notification);
 }
 
 void DashboardToServerBridge::notifyTaskStatusChanged(const QByteArray& taskData)
 {
+    ErasureTask task;
+    if (!task.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "DashboardToServerBridge: taskStatusChanged 反序列化失败";
+        return;
+    }
+
     Message notification;
     notification.set_type(MESSAGE_TYPE_NOTIFY_TASK_STATUS_CHANGED);
     notification.set_timestamp(QDateTime::currentMSecsSinceEpoch());
-    notification.set_user_data(std::string(taskData.data(), taskData.size()));
+    *notification.mutable_task_info() = task;
 
     broadcastToAllDashboards(notification);
 }
 
 void DashboardToServerBridge::notifyTaskCompleted(const QByteArray& taskData)
 {
+    ErasureTask task;
+    if (!task.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "DashboardToServerBridge: taskCompleted 反序列化失败";
+        return;
+    }
+
     Message notification;
     notification.set_type(MESSAGE_TYPE_NOTIFY_TASK_COMPLETED);
     notification.set_timestamp(QDateTime::currentMSecsSinceEpoch());
-    notification.set_user_data(std::string(taskData.data(), taskData.size()));
+    *notification.mutable_task_info() = task;
 
     broadcastToAllDashboards(notification);
 }

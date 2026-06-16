@@ -38,7 +38,6 @@ public:
                    const QString& method, int passCount, qint64 totalBytes,
                    bool verificationEnabled);
     
-    bool updateTaskProgress(const QString& taskId, double progress, qint64 erasedBytes);
     bool updateTaskProgress(const QString& taskId, const ErasureProgress& progress);
     bool updateTaskInfo(const QString& taskId, const ErasureTask& taskInfo);
     bool updateTaskStatus(const QString& taskId, TaskStatus status,
@@ -70,7 +69,7 @@ public:
 
 signals:
     void taskCreated(const QByteArray& taskData);
-    void taskProgressUpdated(const QByteArray& taskData);
+    void taskProgressUpdated(const QByteArray& taskData);//ErasureProgress
     void taskStatusChanged(const QByteArray& taskData);
     void taskCompleted(const QByteArray& taskData);
     void taskRemoved(const QString& taskId);
@@ -85,7 +84,6 @@ private:
     void createTaskImpl(const QString& taskId, const QString& clientId, const QString& diskId,
                         const QString& diskModel, const QString& method, int passCount,
                         qint64 totalBytes, bool verificationEnabled);
-    bool updateTaskProgressImpl(const QString& taskId, double progress, qint64 erasedBytes);
     bool updateTaskProgressImpl(const QString& taskId, const ErasureProgress& progress);
     bool updateTaskInfoImpl(const QString& taskId, const ErasureTask& taskInfo);
     bool updateTaskStatusImpl(const QString& taskId, TaskStatus status,

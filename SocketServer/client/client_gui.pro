@@ -19,6 +19,7 @@ DEFINES += ZMQ_CLIENT
 # Use common Protobuf configuration
 include($$PWD/../common/common.pri)
 include($$PWD/../manager/manager.pri)
+include($${PWD}/../widgets/widgets.pri)
 
 unix {
     ZMQ_ROOT = $$PWD/../3rd/libzmq_build/build_linux_release

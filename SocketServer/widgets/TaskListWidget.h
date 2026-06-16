@@ -72,6 +72,9 @@ private:
     void addTaskNode(QTreeWidgetItem* diskNode, const ErasureTask& task);
     void setupTaskItem(TaskTreeWidgetItem *item, const ErasureTask &task);
     void showTaskDetails(const QString &taskId);
+    TaskTreeWidgetItem* findTaskItem(const QString& taskId, QTreeWidgetItem* parent = nullptr) const;
+    void updateTaskEntry(const ErasureTask& task);
+    void updateTaskCountLabel();
     
     QGroupBox* m_taskListGroup;
     QTreeWidget* m_treeWidget;

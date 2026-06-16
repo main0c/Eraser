@@ -11,6 +11,7 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <QCheckBox>
 #include <algorithm>
 #include <QMutex>
@@ -234,31 +235,55 @@ void TaskListWidget::refreshTaskList()
 
 void TaskListWidget::onTaskCreated(const QByteArray& taskData)
 {
-    Q_UNUSED(taskData);
-    refreshTaskList();
+    ErasureTask task;
+    if (!task.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "TaskListWidget: taskCreated 反序列化失败";
+        return;
+    }
+    updateTaskEntry(task);
+    updateTaskCountLabel();
 }
 
 void TaskListWidget::onTaskProgressUpdated(const QByteArray& taskData)
-{
+{ 
+//TODO no ErasureTask is ErasureProgress
     ErasureTask taskInfo;
-    if (taskInfo.ParseFromArray(taskData.constData(), taskData.size())) {
-        QString taskId = QString::fromStdString(taskInfo.task_id());
-        if (!m_currentSelectedTaskId.isEmpty() && m_currentSelectedTaskId == taskId) {
-            updateDetailView(taskId);
-        }
+    if (!taskInfo.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "TaskListWidget: taskProgressUpdated 反序列化失败";
+        return;
+    }
+    updateTaskEntry(taskInfo);
+    if (!m_currentSelectedTaskId.isEmpty() && m_currentSelectedTaskId == QString::fromStdString(taskInfo.task_id())) {
+        updateDetailView(m_currentSelectedTaskId);
     }
 }
 
 void TaskListWidget::onTaskStatusChanged(const QByteArray& taskData)
 {
-    Q_UNUSED(taskData);
-    refreshTaskList();
+    ErasureTask task;
+    if (!task.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "TaskListWidget: taskStatusChanged 反序列化失败";
+        return;
+    }
+    updateTaskEntry(task);
+    updateTaskCountLabel();
+    if (!m_currentSelectedTaskId.isEmpty() && m_currentSelectedTaskId == QString::fromStdString(task.task_id())) {
+        updateDetailView(m_currentSelectedTaskId);
+    }
 }
 
 void TaskListWidget::onTaskCompleted(const QByteArray& taskData)
 {
-    Q_UNUSED(taskData);
-    refreshTaskList();
+    ErasureTask task;
+    if (!task.ParseFromArray(taskData.constData(), taskData.size())) {
+        qWarning() << "TaskListWidget: taskCompleted 反序列化失败";
+        return;
+    }
+    updateTaskEntry(task);
+    updateTaskCountLabel();
+    if (!m_currentSelectedTaskId.isEmpty() && m_currentSelectedTaskId == QString::fromStdString(task.task_id())) {
+        updateDetailView(m_currentSelectedTaskId);
+    }
 }
 
 void TaskListWidget::onClientFilterChanged(const QString& clientId)
@@ -322,10 +347,14 @@ void TaskListWidget::updateTaskTree()
             QString taskId = QString::fromStdString(task.task_id()).toLower();
             QString diskId = QString::fromStdString(task.disk_id()).toLower();
             QString clientId = QString::fromStdString(task.server_client_id()).toLower();
+            QString diskModel = QString::fromStdString(task.disk_info().model()).toLower();
+            QString erasureMethod = QString::fromStdString(task.erasure_method()).toLower();
             
             if (!taskId.contains(filterText) &&
                     !diskId.contains(filterText) &&
-                    !clientId.contains(filterText)) { // 增加客户端ID筛选
+                    !clientId.contains(filterText) &&
+                    !diskModel.contains(filterText) &&
+                    !erasureMethod.contains(filterText)) {
                 continue;
             }
         }
@@ -454,6 +483,46 @@ void TaskListWidget::updateTaskTree()
         }
     });
 }
+
+TaskTreeWidgetItem* TaskListWidget::findTaskItem(const QString& taskId, QTreeWidgetItem* parent) const
+{
+    QTreeWidgetItem* root = parent ? parent : m_treeWidget->invisibleRootItem();
+    QTreeWidgetItemIterator it(root);
+    while (*it) {
+        TaskTreeWidgetItem* taskItem = dynamic_cast<TaskTreeWidgetItem*>(*it);
+        if (taskItem && taskItem->type() == TaskTreeWidgetItem::TypeTask && taskItem->taskId == taskId) {
+            return taskItem;
+        }
+        ++it;
+    }
+    return nullptr;
+}
+void TaskListWidget::updateTaskEntry(const ErasureTask& task)
+{
+    if (!qApp || qApp->thread() != QThread::currentThread()) {
+        QMetaObject::invokeMethod(this, "updateTaskEntry", Qt::QueuedConnection,
+                                  Q_ARG(ErasureTask, task));
+        return;
+    }
+
+    QString taskId = QString::fromStdString(task.task_id());
+    TaskTreeWidgetItem* item = findTaskItem(taskId);
+    if (!item) {
+        refreshTaskList();
+        return;
+    }
+
+    setupTaskItem(item, task);
+}
+
+void TaskListWidget::updateTaskCountLabel()
+{
+    if (!m_taskManager) return;
+    int totalCount = m_taskManager->getAllTasks().size();
+    int activeCount = m_taskManager->getActiveTasks().size();
+    m_taskCountLabel->setText(QString("任务数量: %1 (进行中: %2)").arg(totalCount).arg(activeCount));
+}
+
 void TaskListWidget::addClientNode(const QString& clientId)
 {
     TaskTreeWidgetItem* clientNode = new TaskTreeWidgetItem(m_treeWidget, TaskTreeWidgetItem::TypeClient);

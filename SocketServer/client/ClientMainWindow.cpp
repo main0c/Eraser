@@ -875,8 +875,29 @@ void ClientMainWindow::updateErasureProgress()
         int currentProgress = task.progress_percent();
         int newProgress = qMin(10000, currentProgress + static_cast<int>(increment * 100));
         qint64 newErasedBytes = static_cast<qint64>(task.total_bytes() * newProgress / 10000.0);
-        
-        m_taskManager->updateTaskProgress(taskId, newProgress / 100.0, newErasedBytes);
+        // 获取客户端信息
+        ClientInfoWrap &localClient = m_clientList.first();
+        ClientInfo &clientInfo = localClient.clientInfo;
+
+        // 填充 ErasureProgress 对象
+        ErasureProgress progress;
+        progress.set_task_id(taskId.toStdString());
+        progress.set_disk_id(diskId.toStdString());
+        progress.set_server_client_id(clientInfo.server_client_id());
+        progress.set_current_pass(1);  // 当前第 1 遍
+        progress.set_total_passes(task.pass_count());
+        progress.set_current_step(0);
+        progress.set_total_steps_in_pass(1);
+        progress.set_step_description("擦除中");
+        progress.set_bytes_processed(newErasedBytes);
+        progress.set_total_bytes(task.total_bytes());
+        progress.set_progress_percent(newProgress);  // 0-10000 范围
+        progress.set_erased_bytes(newErasedBytes);
+        progress.set_speed_mb_per_s(task.speed_mb_per_s());  // 从任务中获取
+        progress.set_timestamp(QDateTime::currentMSecsSinceEpoch());
+
+        m_taskManager->updateTaskProgress(taskId, progress);
+
         
         sendErasureProgress(taskId, diskId, newProgress / 100.0);
         
@@ -1259,9 +1280,9 @@ void ClientMainWindow::onClientRegister(const QString& server_clinent_id)
 {
     ClientInfoWrap &localClient = m_clientList.first();
     ClientInfo &clientInfo = localClient.clientInfo;
-   clientInfo.set_server_client_id(server_clinent_id.toStdString());
+    clientInfo.set_server_client_id(server_clinent_id.toStdString());
     generateDiskInfo();//可能需要注册成功后再去获取磁盘信息
-//    sendDiskInfo();
+    //    sendDiskInfo();
 }
 void ClientMainWindow::onClientStopped()
 {

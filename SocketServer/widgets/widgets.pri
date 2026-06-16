@@ -18,6 +18,9 @@ contains(DEFINES, ZMQ_SERVER) | contains(DEFINES, DASHBOARD_APP) {
     HEADERS += $$PWD/ClientInfoWidget.h
 }
 
+RESOURCES += \
+    $${PWD}/widgets.qrc
+
 # Conditional compilation: Include ErasureControlWidget if ZMQ_SERVER is NOT defined
 !contains(DEFINES, ZMQ_SERVER) {
     SOURCES += $$PWD/ErasureControlWidget.cpp

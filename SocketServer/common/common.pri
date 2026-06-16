@@ -83,12 +83,8 @@ HEADERS += $$PWD/MessageHandler.h \
            $$PWD/Utils.h \
            $$PWD/messages.pb.h
 
-RESOURCES += \
-    $${PWD}/common.qrc
 
-!contains(DEFINES, CORE_SERVER) {
-    include($${PWD}/task/task.pri)
-}
+
 # 5. Clean Rules
 QMAKE_CLEAN += $$PWD/messages.pb.cc \
                $$PWD/messages.pb.h

@@ -21,7 +21,7 @@ DEFINES += DASHBOARD_APP
 # Use common Protobuf configuration
 include($$PWD/../common/common.pri)
 include($$PWD/../manager/manager.pri)
-
+include($${PWD}/../widgets/widgets.pri)
 unix {
     LIBS += -lzmq
     LIBS += -lprotobuf
